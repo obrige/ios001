@@ -176,7 +176,7 @@ def get_country_emoji(country_code):
     country_code = country_code.upper()
     
     try:
-        flag = ''.join(chr(0x1F1E6 + ord(char) - ord('A')) for char in country_code)
+        flag = ''.join(chr(0x1F1E6 - ord('A') + ord(char)) for char in country_code)
         return flag
     except:
         return '🌐'
