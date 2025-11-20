@@ -12,32 +12,7 @@ import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# 国家代码到 emoji 的映射
-COUNTRY_EMOJI = {
-    'CN': '🇨🇳', 'US': '🇺🇸', 'JP': '🇯🇵', 'KR': '🇰🇷', 'HK': '🇭🇰',
-    'TW': '🇹🇼', 'SG': '🇸🇬', 'GB': '🇬🇧', 'DE': '🇩🇪', 'FR': '🇫🇷',
-    'CA': '🇨🇦', 'AU': '🇦🇺', 'RU': '🇷🇺', 'IN': '🇮🇳', 'BR': '🇧🇷',
-    'NL': '🇳🇱', 'SE': '🇸🇪', 'CH': '🇨🇭', 'IT': '🇮🇹', 'ES': '🇪🇸',
-    'PL': '🇵🇱', 'TR': '🇹🇷', 'MY': '🇲🇾', 'TH': '🇹🇭', 'VN': '🇻🇳',
-    'ID': '🇮🇩', 'PH': '🇵🇭', 'AR': '🇦🇷', 'MX': '🇲🇽', 'CL': '🇨🇱',
-    'FI': '🇫🇮', 'NO': '🇳🇴', 'DK': '🇩🇰', 'BE': '🇧🇪', 'AT': '🇦🇹',
-    'IE': '🇮🇪', 'NZ': '🇳🇿', 'ZA': '🇿🇦', 'AE': '🇦🇪', 'SA': '🇸🇦',
-    'IL': '🇮🇱', 'EG': '🇪🇬', 'NG': '🇳🇬', 'KE': '🇰🇪', 'UA': '🇺🇦',
-    'RO': '🇷🇴', 'CZ': '🇨🇿', 'PT': '🇵🇹', 'GR': '🇬🇷', 'HU': '🇭🇺',
-    'BG': '🇧🇬', 'HR': '🇭🇷', 'SK': '🇸🇰', 'LT': '🇱🇹', 'LV': '🇱🇻',
-    'EE': '🇪🇪', 'IS': '🇮🇸', 'LU': '🇱🇺', 'MT': '🇲🇹', 'CY': '🇨🇾',
-    'MO': '🇲🇴', 'BD': '🇧🇩', 'PK': '🇵🇰', 'LK': '🇱🇰', 'MM': '🇲🇲',
-    'KH': '🇰🇭', 'LA': '🇱🇦', 'NP': '🇳🇵', 'MN': '🇲🇳', 'KZ': '🇰🇿',
-    'UZ': '🇺🇿', 'GE': '🇬🇪', 'AM': '🇦🇲', 'AZ': '🇦🇿', 'BY': '🇧🇾',
-    'MD': '🇲🇩', 'RS': '🇷🇸', 'BA': '🇧🇦', 'AL': '🇦🇱', 'MK': '🇲🇰',
-    'SI': '🇸🇮', 'ME': '🇲🇪', 'XK': '🇽🇰', 'LI': '🇱🇮', 'MC': '🇲🇨',
-    'SM': '🇸🇲', 'VA': '🇻🇦', 'AD': '🇦🇩', 'JO': '🇯🇴', 'LB': '🇱🇧',
-    'IQ': '🇮🇶', 'SY': '🇸🇾', 'YE': '🇾🇪', 'OM': '🇴🇲', 'KW': '🇰🇼',
-    'BH': '🇧🇭', 'QA': '🇶🇦', 'PS': '🇵🇸', 'AF': '🇦🇫', 'IR': '🇮🇷',
-}
-
 def is_base64(s):
-    """检查字符串是否为有效的 base64"""
     try:
         if isinstance(s, str):
             s = s.strip()
@@ -53,7 +28,6 @@ def is_base64(s):
         return False
 
 def decode_base64(content):
-    """解码 base64 内容"""
     try:
         decoded = base64.b64decode(content).decode('utf-8', errors='ignore')
         return decoded
@@ -61,14 +35,17 @@ def decode_base64(content):
         return None
 
 def is_valid_node(line):
-    """检查是否为有效的节点链接"""
-    protocols = ['ss://', 'vmess://', 'vless://', 'trojan://', 'trojan-go://', 
-                 'hysteria://', 'hysteria2://', 'hy2://', 'tuic://', 'shadowsocks://']
-    return any(line.startswith(prefix) for prefix in protocols)
+    excluded_protocols = ['http://', 'https://', 'tcp://', 'udp://', 'ftp://', 'ftps://', 
+                          'ws://', 'wss://', 'file://', 'data://', 'mailto:', 'tel:']
+    
+    line_lower = line.lower()
+    if any(line_lower.startswith(proto) for proto in excluded_protocols):
+        return False
+    
+    pattern = r'^[a-zA-Z0-9\-_]{2,10}://.+'
+    return bool(re.match(pattern, line))
 
 def is_ipv6(host):
-    """检查是否为 IPv6 地址"""
-    # 去掉可能的中括号
     host = host.strip('[]')
     try:
         socket.inet_pton(socket.AF_INET6, host)
@@ -77,7 +54,6 @@ def is_ipv6(host):
         return False
 
 def is_ipv4(host):
-    """检查是否为 IPv4 地址"""
     try:
         socket.inet_pton(socket.AF_INET, host)
         return True
@@ -85,35 +61,96 @@ def is_ipv4(host):
         return False
 
 def is_domain(host):
-    """检查是否为域名"""
     return not is_ipv4(host) and not is_ipv6(host)
 
-def resolve_domain_to_ip(host):
-    """将域名解析为 IP 地址"""
-    try:
-        # 优先尝试 IPv4
-        addr_info = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
-        if addr_info:
-            return addr_info[0][4][0]
-    except:
-        pass
+def resolve_domain_to_ip_doh(host, retries=3):
+    doh_servers = [
+        'https://1.1.1.1/dns-query',
+        'https://8.8.8.8/resolve',
+        'https://dns.google/resolve'
+    ]
     
-    try:
-        # 尝试 IPv6
-        addr_info = socket.getaddrinfo(host, None, socket.AF_INET6, socket.SOCK_STREAM)
-        if addr_info:
-            return addr_info[0][4][0]
-    except:
-        pass
+    for attempt in range(retries):
+        for doh_url in doh_servers:
+            try:
+                if 'dns-query' in doh_url:
+                    import struct
+                    query_id = 0x1234
+                    flags = 0x0100
+                    questions = 1
+                    answer_rrs = 0
+                    authority_rrs = 0
+                    additional_rrs = 0
+                    
+                    header = struct.pack('!HHHHHH', query_id, flags, questions, answer_rrs, authority_rrs, additional_rrs)
+                    
+                    qname = b''
+                    for part in host.split('.'):
+                        qname += bytes([len(part)]) + part.encode()
+                    qname += b'\x00'
+                    
+                    qtype_a = 1
+                    qclass_in = 1
+                    question = qname + struct.pack('!HH', qtype_a, qclass_in)
+                    
+                    dns_query = header + question
+                    
+                    req = urllib.request.Request(
+                        doh_url,
+                        data=dns_query,
+                        headers={
+                            'Content-Type': 'application/dns-message',
+                            'Accept': 'application/dns-message'
+                        }
+                    )
+                    
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        dns_response = response.read()
+                        
+                        offset = 12 + len(question)
+                        
+                        while offset < len(dns_response):
+                            if dns_response[offset] & 0xC0 == 0xC0:
+                                offset += 2
+                            else:
+                                while offset < len(dns_response) and dns_response[offset] != 0:
+                                    offset += dns_response[offset] + 1
+                                offset += 1
+                            
+                            if offset + 10 > len(dns_response):
+                                break
+                            
+                            rtype, rclass, ttl, rdlength = struct.unpack('!HHIH', dns_response[offset:offset+10])
+                            offset += 10
+                            
+                            if rtype == 1 and rdlength == 4:
+                                ip = '.'.join(str(b) for b in dns_response[offset:offset+4])
+                                return ip
+                            
+                            offset += rdlength
+                else:
+                    url = f"{doh_url}?name={host}&type=A"
+                    req = urllib.request.Request(url, headers={'Accept': 'application/dns-json'})
+                    
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        data = json.loads(response.read().decode('utf-8'))
+                        
+                        if 'Answer' in data:
+                            for answer in data['Answer']:
+                                if answer.get('type') == 1:
+                                    return answer.get('data')
+            except Exception as e:
+                continue
+        
+        if attempt < retries - 1:
+            time.sleep(1)
     
     return None
 
 def query_ip_info(ip, retries=3):
-    """查询 IP 地理位置信息"""
     if not ip:
         return None
     
-    # 去掉 IPv6 的中括号（如果有）
     ip = ip.strip('[]')
     
     for attempt in range(retries):
@@ -126,24 +163,30 @@ def query_ip_info(ip, retries=3):
                 return data
         except Exception as e:
             if attempt < retries - 1:
-                time.sleep(1)
+                time.sleep(2)
             else:
-                print(f"    ⚠ IP查询失败: {ip} - {e}")
+                print(f"    ⚠ IP查询失败 ({attempt+1}/{retries}): {ip} - {e}")
     
     return None
 
 def get_country_emoji(country_code):
-    """根据国家代码获取 emoji"""
-    return COUNTRY_EMOJI.get(country_code.upper(), '🌐')
+    if not country_code or len(country_code) != 2:
+        return '🌐'
+    
+    country_code = country_code.upper()
+    
+    try:
+        flag = ''.join(chr(0x1F1E6 + ord(char) - ord('A')) for char in country_code)
+        return flag
+    except:
+        return '🌐'
 
 def generate_node_label(ip_info, ip):
-    """根据 IP 信息生成节点标签"""
     if not ip_info:
         return f"🌐|Unknown-{ip}"
     
     parts = []
     
-    # 获取国家代码和 emoji
     country_code = ip_info.get('country', {}).get('code', '')
     country_name = ip_info.get('country', {}).get('name', '')
     
@@ -154,22 +197,18 @@ def generate_node_label(ip_info, ip):
     if country_name:
         parts.append(country_name)
     
-    # 运营商
-    as_info = ip_info.get('as', {}).get('info', '')
+    as_info = ip_info.get('as', {}).get('info', '') or ip_info.get('as', {}).get('name', '')
     if as_info:
         parts.append(as_info)
     
-    # 地区
     regions_short = ip_info.get('regions_short', [])
     if regions_short:
         parts.append('-'.join(regions_short))
     
-    # 类型
     ip_type = ip_info.get('type', '')
     if ip_type:
         parts.append(ip_type)
     
-    # 判断是否为原生IP
     registered_country = ip_info.get('registered_country', {}).get('code', '')
     country_code_check = ip_info.get('country', {}).get('code', '')
     
@@ -183,10 +222,9 @@ def generate_node_label(ip_info, ip):
     return label
 
 def parse_node_address(node_url):
-    """解析节点地址和端口"""
     try:
-        if node_url.startswith('ss://'):
-            parts = node_url[5:].split('#')[0].split('@')
+        if node_url.startswith('ss://') or node_url.startswith('shadowsocks://'):
+            parts = node_url.split('://')[1].split('#')[0].split('@')
             if len(parts) == 2:
                 server_info = parts[1].split(':')
                 if len(server_info) >= 2:
@@ -211,28 +249,7 @@ def parse_node_address(node_url):
                 port = int(config.get('port', 0))
                 return host, port
         
-        elif node_url.startswith('vless://'):
-            parsed = urllib.parse.urlparse(node_url)
-            host = parsed.hostname
-            port = parsed.port
-            if host and port:
-                return host, port
-        
-        elif node_url.startswith('trojan://') or node_url.startswith('trojan-go://'):
-            parsed = urllib.parse.urlparse(node_url)
-            host = parsed.hostname
-            port = parsed.port
-            if host and port:
-                return host, port
-        
-        elif node_url.startswith('hysteria://') or node_url.startswith('hysteria2://') or node_url.startswith('hy2://'):
-            parsed = urllib.parse.urlparse(node_url)
-            host = parsed.hostname
-            port = parsed.port
-            if host and port:
-                return host, port
-        
-        elif node_url.startswith('tuic://'):
+        else:
             parsed = urllib.parse.urlparse(node_url)
             host = parsed.hostname
             port = parsed.port
@@ -245,7 +262,6 @@ def parse_node_address(node_url):
     return None, None
 
 def tcp_ping(host, port, timeout=1):
-    """TCP ping 检测，自动支持 IPv4 和 IPv6，超时1秒"""
     if not host or not port:
         return False
     
@@ -267,31 +283,23 @@ def tcp_ping(host, port, timeout=1):
         return False
 
 def update_node_label(node_url, new_label):
-    """更新节点的标签"""
-    # 移除原有标签
     if '#' in node_url:
         node_url = node_url.split('#')[0]
     
-    # 添加新标签（URL 编码）
     encoded_label = urllib.parse.quote(new_label)
     return f"{node_url}#{encoded_label}"
 
 def normalize_ipv6_in_url(node_url, host, port):
-    """将节点 URL 中的 IPv6 地址标准化为 [host]:port 格式"""
-    # 只处理 IPv6 地址，不处理域名
     if not is_ipv6(host):
         return node_url
     
     try:
-        # 对于不同协议，处理方式不同
-        if node_url.startswith('ss://'):
-            # SS 协议需要特殊处理
+        if node_url.startswith('ss://') or node_url.startswith('shadowsocks://'):
             parts = node_url.split('@')
             if len(parts) == 2:
                 before_at = parts[0]
                 after_at = parts[1]
                 
-                # 替换 host:port 为 [host]:port
                 if '#' in after_at:
                     server_part, label_part = after_at.split('#', 1)
                     new_url = f"{before_at}@[{host}]:{port}#{label_part}"
@@ -301,7 +309,6 @@ def normalize_ipv6_in_url(node_url, host, port):
                 return new_url
         
         elif node_url.startswith('vmess://'):
-            # VMess 需要修改 JSON 配置
             vmess_data = node_url[8:].split('#')[0]
             label = node_url.split('#')[1] if '#' in node_url else ''
             
@@ -320,11 +327,7 @@ def normalize_ipv6_in_url(node_url, host, port):
                     return f"vmess://{new_encoded}"
         
         else:
-            # 对于 vless, trojan 等使用标准 URL 格式的协议
-            # 确保 IPv6 地址被中括号包裹
-            # 先移除可能存在的中括号
             node_url = node_url.replace(f"[{host}]", host)
-            # 然后统一添加中括号
             node_url = node_url.replace(f"@{host}:{port}", f"@[{host}]:{port}")
             node_url = node_url.replace(f"//{host}:{port}", f"//[{host}]:{port}")
     
@@ -334,43 +337,34 @@ def normalize_ipv6_in_url(node_url, host, port):
     return node_url
 
 def check_node(node_url):
-    """检查单个节点的连通性并更新标签"""
     host, port = parse_node_address(node_url)
     
     if not host or not port:
         return None, "无法解析地址"
     
-    # 第一步：TCP ping 测试（1秒超时）
     is_alive = tcp_ping(host, port, timeout=1)
     
     if not is_alive:
         return None, f"✗ {host}:{port} - 连接超时"
     
-    # 第二步：确定要查询的 IP
     query_ip = None
     original_host = host
     
     if is_domain(host):
-        # 是域名，需要解析为 IP
-        resolved_ip = resolve_domain_to_ip(host)
+        resolved_ip = resolve_domain_to_ip_doh(host)
         if resolved_ip:
             query_ip = resolved_ip
         else:
             return None, f"✗ {host}:{port} - 域名解析失败"
     else:
-        # 是 IP 地址（IPv4 或 IPv6）
         query_ip = host.strip('[]')
     
-    # 第三步：查询 IP 信息
     ip_info = query_ip_info(query_ip)
     
-    # 第四步：生成新标签
     new_label = generate_node_label(ip_info, query_ip)
     
-    # 第五步：更新节点标签
     updated_node = update_node_label(node_url, new_label)
     
-    # 第六步：标准化 IPv6 格式（只处理 IP 地址，不处理域名）
     if not is_domain(original_host):
         updated_node = normalize_ipv6_in_url(updated_node, original_host, port)
     
@@ -379,7 +373,6 @@ def check_node(node_url):
     return updated_node, status
 
 def extract_nodes_from_file(file_path):
-    """从文件中提取节点"""
     nodes = []
     
     try:
@@ -430,7 +423,6 @@ def extract_nodes_from_file(file_path):
     return nodes
 
 def main():
-    """主函数"""
     print("=" * 60)
     print("开始处理节点...")
     print("=" * 60)
@@ -447,7 +439,6 @@ def main():
     file_count = 0
     processed_files = []
     
-    # 遍历所有文件
     for file_path in source_path.rglob('*'):
         if file_path.is_dir():
             continue
@@ -476,7 +467,6 @@ def main():
     print("节点提取完成，开始连通性测试和标签更新...")
     print("=" * 60)
     
-    # 去重
     unique_nodes = list(dict.fromkeys(all_nodes))
     
     print(f"\n📊 提取统计:")
@@ -485,7 +475,6 @@ def main():
     print(f"  - 总节点数: {len(all_nodes)}")
     print(f"  - 去重后节点数: {len(unique_nodes)}")
     
-    # TCP ping 测试和标签更新
     print(f"\n🔍 开始测试和更新标签 (TCP超时: 1秒)...")
     alive_nodes = []
     
@@ -509,7 +498,6 @@ def main():
     if len(unique_nodes) > 0:
         print(f"  - 可用率: {len(alive_nodes)/len(unique_nodes)*100:.1f}%")
     
-    # 保存为 base64 编码的订阅文件
     if alive_nodes:
         merged_content = '\n'.join(alive_nodes)
         encoded_content = base64.b64encode(merged_content.encode('utf-8')).decode('utf-8')
