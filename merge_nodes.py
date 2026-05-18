@@ -173,26 +173,127 @@ def resolve_domain_to_ips_doh(host, retries=3):
     
     return ipv4, ipv6
 
-def query_ip_info(ip, retries=3):
+def _normalize_ip_sb(data):
+    """Normalize api.ip.sb response"""
+    try:
+        cc = data.get('country_code', '')
+        if not cc:
+            return None
+        return {
+            'country': {'code': cc, 'name': data.get('country', '')},
+            'as': {'info': data.get('asn_organization', '') or data.get('isp', ''),
+                   'name': f"AS{data['asn']}" if data.get('asn') else ''},
+            'regions_short': [data['region']] if data.get('region') else [],
+            'type': 'IPv4',
+            'registered_country': {'code': cc}
+        }
+    except Exception:
+        return None
+
+def _normalize_ipinfo(data):
+    """Normalize ipinfo.io response"""
+    try:
+        cc = data.get('country', '')
+        if not cc:
+            return None
+        org = data.get('org', '')
+        as_name, as_info = '', ''
+        if org:
+            parts = org.split(' ', 1)
+            as_name = parts[0]
+            as_info = parts[1] if len(parts) > 1 else ''
+        return {
+            'country': {'code': cc, 'name': ''},
+            'as': {'info': as_info, 'name': as_name},
+            'regions_short': [data['region']] if data.get('region') else [],
+            'type': 'IPv4',
+            'registered_country': {'code': cc}
+        }
+    except Exception:
+        return None
+
+def _normalize_ipwhois(data):
+    """Normalize ipwho.is response"""
+    try:
+        if not data.get('success'):
+            return None
+        cc = data.get('country_code', '')
+        if not cc:
+            return None
+        conn = data.get('connection', {})
+        return {
+            'country': {'code': cc, 'name': data.get('country', '')},
+            'as': {'info': conn.get('org', '') or conn.get('isp', ''),
+                   'name': f"AS{conn['asn']}" if conn.get('asn') else ''},
+            'regions_short': [data['region']] if data.get('region') else [],
+            'type': data.get('type', 'IPv4'),
+            'registered_country': {'code': cc}
+        }
+    except Exception:
+        return None
+
+def _normalize_freeipapi(data):
+    """Normalize freeipapi.com response"""
+    try:
+        cc = data.get('countryCode', '')
+        if not cc:
+            return None
+        return {
+            'country': {'code': cc, 'name': data.get('countryName', '')},
+            'as': {'info': data.get('asnOrganization', ''),
+                   'name': f"AS{data['asn']}" if data.get('asn') else ''},
+            'regions_short': [data['regionName']] if data.get('regionName') else [],
+            'type': 'IPv4',
+            'registered_country': {'code': cc}
+        }
+    except Exception:
+        return None
+
+def _normalize_geodb(data):
+    """Normalize geolocation-db.com response"""
+    try:
+        cc = data.get('country_code', '')
+        if not cc:
+            return None
+        return {
+            'country': {'code': cc, 'name': data.get('country_name', '')},
+            'as': {'info': '', 'name': ''},
+            'regions_short': [data['state']] if data.get('state') else [],
+            'type': 'IPv4',
+            'registered_country': {'code': cc}
+        }
+    except Exception:
+        return None
+
+def query_ip_info(ip, retries=2):
     if not ip:
         return None
-    
+
     ip = ip.strip('[]')
-    
-    for attempt in range(retries):
-        try:
-            url = f"https://hugo-jiang-ip-api.hf.space/{ip}"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            
-            with urllib.request.urlopen(req, timeout=10) as response:
-                data = json.loads(response.read().decode('utf-8'))
-                return data
-        except Exception as e:
-            if attempt < retries - 1:
-                time.sleep(2)
-            else:
-                print(f"    ⚠ IP查询失败 ({attempt+1}/{retries}): {ip} - {e}")
-    
+
+    api_sources = [
+        ('https://api.ip.sb/geoip/{}',          _normalize_ip_sb),
+        ('https://ipinfo.io/{}/json',            _normalize_ipinfo),
+        ('https://ipwho.is/{}',                  _normalize_ipwhois),
+        ('https://freeipapi.com/api/json/{}',    _normalize_freeipapi),
+        ('https://geolocation-db.com/json/{}',   _normalize_geodb),
+    ]
+
+    for url_tpl, normalizer in api_sources:
+        for attempt in range(retries):
+            try:
+                url = url_tpl.format(ip)
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    result = normalizer(data)
+                    if result:
+                        return result
+            except Exception:
+                if attempt < retries - 1:
+                    time.sleep(1)
+
+    print(f"    ⚠ IP查询失败: {ip} - 所有API均不可用")
     return None
 
 def get_country_emoji(country_code):
@@ -530,7 +631,7 @@ def main():
     print(f"\n🔍 开始测试和更新标签 (TCP超时: 1秒)...")
     alive_nodes = []
     
-    with ThreadPoolExecutor(max_workers=30) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(check_node, node): node for node in unique_nodes}
         
         for i, future in enumerate(as_completed(futures), 1):
